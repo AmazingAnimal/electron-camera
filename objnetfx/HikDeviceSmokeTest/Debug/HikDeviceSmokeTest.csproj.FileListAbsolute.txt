@@ -1,0 +1,8 @@
+D:\code\electron-camera\objnetfx\HikDeviceSmokeTest\Debug\HikDeviceSmokeTest.csproj.AssemblyReference.cache
+D:\code\electron-camera\objnetfx\HikDeviceSmokeTest\Debug\HikDeviceSmokeTest.csproj.CoreCompileInputs.cache
+D:\code\electron-camera\mvp\bin\Debug\HikDeviceSmokeTest.exe
+D:\code\electron-camera\mvp\bin\Debug\HikDeviceSmokeTest.pdb
+D:\code\electron-camera\mvp\bin\Debug\MvCameraControl.Net.dll
+D:\code\electron-camera\objnetfx\HikDeviceSmokeTest\Debug\HikDevic.5699B55C.Up2Date
+D:\code\electron-camera\objnetfx\HikDeviceSmokeTest\Debug\HikDeviceSmokeTest.exe
+D:\code\electron-camera\objnetfx\HikDeviceSmokeTest\Debug\HikDeviceSmokeTest.pdb

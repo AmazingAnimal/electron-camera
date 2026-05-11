@@ -80,3 +80,6 @@ temp/
 
 # 打包后的资源（如果有）
 *.asar
+
+# Visual Studio temporary files
+.vs/
