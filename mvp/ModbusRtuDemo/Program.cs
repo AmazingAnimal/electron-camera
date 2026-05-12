@@ -7,6 +7,7 @@ namespace ModbusRtuDemo
     {
         static int Main(string[] args)
         {
+            int exitCode = 0;
             string portName = args.Length > 0 ? args[0] : "COM3";
             int baudRate = args.Length > 1 ? int.Parse(args[1]) : 9600;
             byte slaveId = args.Length > 2 ? byte.Parse(args[2]) : (byte)1;
@@ -67,15 +68,19 @@ namespace ModbusRtuDemo
 
                     Console.WriteLine();
                     Console.WriteLine("示例结束，串口即将关闭");
-                    return 0;
                 }
             }
             catch (Exception ex)
             {
                 Console.WriteLine("Modbus RTU 通信失败:");
                 Console.WriteLine(ex.Message);
-                return -1;
+                exitCode = -1;
             }
+
+            Console.WriteLine();
+            Console.WriteLine("按任意键退出...");
+            Console.ReadKey();
+            return exitCode;
         }
     }
 }
