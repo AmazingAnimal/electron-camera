@@ -1,7 +1,5 @@
 using System;
-using System.Globalization;
-using System.IO.Ports;
-using System.Linq;
+using System.Threading;
 
 namespace ModbusRtuDemo
 {
@@ -15,141 +13,69 @@ namespace ModbusRtuDemo
             ushort startAddress = args.Length > 3 ? ushort.Parse(args[3]) : (ushort)0;
             ushort registerCount = args.Length > 4 ? ushort.Parse(args[4]) : (ushort)2;
 
-            using (var serialPort = new SerialPort(portName, baudRate, Parity.None, 8, StopBits.One))
+            try
             {
-                serialPort.ReadTimeout = 2000;
-                serialPort.WriteTimeout = 2000;
-
-                try
+                using (var plcService = new PlcService(portName, baudRate, slaveId))
                 {
-                    serialPort.Open();
-                    Console.WriteLine($"串口已打开: {portName}, 波特率: {baudRate}");
+                    plcService.Connect();
+                    Console.WriteLine($"串口已打开: {portName}, 波特率: {baudRate}, 从站: {slaveId}");
 
-                    byte[] request = BuildReadHoldingRegistersRequest(slaveId, startAddress, registerCount);
-                    Console.WriteLine("发送报文: " + ToHex(request));
-                    serialPort.Write(request, 0, request.Length);
+                    byte[] registerRequest = plcService.BuildReadRegistersRequest(startAddress, registerCount);
+                    Console.WriteLine("发送保持寄存器请求: " + PlcService.ToHex(registerRequest));
 
-                    // 读取响应: 从站地址(1) + 功能码(1) + 字节数(1) + 数据(N*2) + CRC(2)
-                    int expectedLength = 5 + registerCount * 2;
-                    byte[] response = ReadExact(serialPort, expectedLength);
-                    Console.WriteLine("接收报文: " + ToHex(response));
-
-                    ValidateCrc(response);
-                    ValidateResponseHeader(response, slaveId, 0x03);
-
-                    int byteCount = response[2];
-                    if (byteCount != registerCount * 2)
+                    ushort[] values = plcService.ReadRegisters(startAddress, registerCount);
+                    for (int i = 0; i < values.Length; i++)
                     {
-                        throw new Exception($"返回字节数异常: {byteCount}");
+                        Console.WriteLine($"寄存器[{startAddress + i}] = {values[i]}");
                     }
 
-                    for (int i = 0; i < registerCount; i++)
+                    bool trigger = plcService.ReadScanTrigger(0);
+                    Console.WriteLine($"扫码触发位(寄存器0) = {(trigger ? "触发" : "未触发")}");
+
+                    ushort deviceStatus = plcService.ReadDeviceStatus(1);
+                    Console.WriteLine($"设备状态(寄存器1) = {deviceStatus}");
+
+                    byte[] coilRequest = plcService.BuildReadCoilsRequest(0, 1);
+                    Console.WriteLine("发送线圈请求: " + PlcService.ToHex(coilRequest));
+                    bool allowPass = plcService.ReadAllowPass(0);
+                    Console.WriteLine($"允许放行线圈(地址0) = {(allowPass ? "ON" : "OFF")}");
+
+                    Console.WriteLine();
+                    Console.WriteLine("---- 写单线圈示例 ----");
+                    byte[] writeCoilRequest = plcService.BuildWriteSingleCoilRequest(0, true);
+                    Console.WriteLine("发送写单线圈请求: " + PlcService.ToHex(writeCoilRequest));
+                    plcService.WriteScanSuccess(true, 0);
+                    Console.WriteLine("写单线圈完成: 地址0 = ON");
+
+                    Console.WriteLine();
+                    Console.WriteLine("---- 写单寄存器示例 ----");
+                    byte[] writeRegisterRequest = plcService.BuildWriteSingleRegisterRequest(10, 1);
+                    Console.WriteLine("发送写单寄存器请求: " + PlcService.ToHex(writeRegisterRequest));
+                    plcService.WriteScanStatusCode(1, 10);
+                    Console.WriteLine("写单寄存器完成: 地址10 = 1");
+
+                    Console.WriteLine();
+                    Console.WriteLine("---- 轮询示例：持续读取扫码触发位 ----");
+                    Console.WriteLine("默认轮询 10 次，每次间隔 1000ms");
+                    for (int i = 0; i < 10; i++)
                     {
-                        ushort value = (ushort)((response[3 + i * 2] << 8) | response[4 + i * 2]);
-                        Console.WriteLine($"寄存器[{startAddress + i}] = {value}");
+                        bool pollingTrigger = plcService.ReadScanTrigger(0);
+                        ushort pollingDeviceStatus = plcService.ReadDeviceStatus(1);
+                        Console.WriteLine($"[轮询 {i + 1}/10] 扫码触发位 = {(pollingTrigger ? "触发" : "未触发")}, 设备状态 = {pollingDeviceStatus}");
+                        Thread.Sleep(1000);
                     }
 
+                    Console.WriteLine();
+                    Console.WriteLine("示例结束，串口即将关闭");
                     return 0;
                 }
-                catch (Exception ex)
-                {
-                    Console.WriteLine("Modbus RTU 通信失败:");
-                    Console.WriteLine(ex.Message);
-                    return -1;
-                }
-                finally
-                {
-                    if (serialPort.IsOpen)
-                    {
-                        serialPort.Close();
-                        Console.WriteLine("串口已关闭");
-                    }
-                }
             }
-        }
-
-        static byte[] BuildReadHoldingRegistersRequest(byte slaveId, ushort startAddress, ushort registerCount)
-        {
-            byte[] frame = new byte[8];
-            frame[0] = slaveId;
-            frame[1] = 0x03;
-            frame[2] = (byte)(startAddress >> 8);
-            frame[3] = (byte)(startAddress & 0xFF);
-            frame[4] = (byte)(registerCount >> 8);
-            frame[5] = (byte)(registerCount & 0xFF);
-
-            ushort crc = ComputeCrc(frame, 6);
-            frame[6] = (byte)(crc & 0xFF);
-            frame[7] = (byte)(crc >> 8);
-            return frame;
-        }
-
-        static ushort ComputeCrc(byte[] data, int length)
-        {
-            ushort crc = 0xFFFF;
-            for (int i = 0; i < length; i++)
+            catch (Exception ex)
             {
-                crc ^= data[i];
-                for (int j = 0; j < 8; j++)
-                {
-                    bool lsb = (crc & 0x0001) != 0;
-                    crc >>= 1;
-                    if (lsb)
-                    {
-                        crc ^= 0xA001;
-                    }
-                }
+                Console.WriteLine("Modbus RTU 通信失败:");
+                Console.WriteLine(ex.Message);
+                return -1;
             }
-            return crc;
-        }
-
-        static void ValidateCrc(byte[] response)
-        {
-            ushort expected = ComputeCrc(response, response.Length - 2);
-            ushort actual = (ushort)(response[response.Length - 2] | (response[response.Length - 1] << 8));
-            if (expected != actual)
-            {
-                throw new Exception($"CRC 校验失败: expected=0x{expected:X4}, actual=0x{actual:X4}");
-            }
-        }
-
-        static void ValidateResponseHeader(byte[] response, byte slaveId, byte functionCode)
-        {
-            if (response[0] != slaveId)
-            {
-                throw new Exception($"从站地址不匹配: {response[0]}");
-            }
-
-            if (response[1] == (functionCode | 0x80))
-            {
-                throw new Exception($"从站返回异常码: 0x{response[2]:X2}");
-            }
-
-            if (response[1] != functionCode)
-            {
-                throw new Exception($"功能码不匹配: 0x{response[1]:X2}");
-            }
-        }
-
-        static byte[] ReadExact(SerialPort port, int expectedLength)
-        {
-            byte[] buffer = new byte[expectedLength];
-            int offset = 0;
-            while (offset < expectedLength)
-            {
-                int read = port.Read(buffer, offset, expectedLength - offset);
-                if (read <= 0)
-                {
-                    throw new TimeoutException("读取串口超时");
-                }
-                offset += read;
-            }
-            return buffer;
-        }
-
-        static string ToHex(byte[] data)
-        {
-            return string.Join(" ", data.Select(b => b.ToString("X2", CultureInfo.InvariantCulture)));
         }
     }
 }
