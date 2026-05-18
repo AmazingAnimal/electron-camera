@@ -8,6 +8,9 @@ namespace DeviceService
 {
     class Program
     {
+        private static volatile bool _running = true;
+        private static volatile bool _manualTriggerRequested = false;
+
         static int Main(string[] args)
         {
             int exitCode = 0;
@@ -17,6 +20,7 @@ namespace DeviceService
             int pollIntervalMs = args.Length > 3 ? int.Parse(args[3]) : 500;
 
             var mockScanner = new MockScannerService();
+            StartCommandLoop();
 
             try
             {
@@ -29,7 +33,7 @@ namespace DeviceService
                     bool lastTrigger = false;
                     int loopIndex = 0;
 
-                    while (true)
+                    while (_running)
                     {
                         loopIndex++;
                         Console.WriteLine($"[轮询 {loopIndex}] reading trigger...");
@@ -44,9 +48,11 @@ namespace DeviceService
                         string plcStatusJson = $"{{\"type\":\"plc-status\",\"scanTrigger\":{trigger.ToString().ToLower()},\"deviceStatus\":{deviceStatus},\"allowPass\":{allowPass.ToString().ToLower()},\"time\":\"{DateTime.Now:yyyy-MM-dd HH:mm:ss}\"}}";
                         Console.WriteLine(plcStatusJson);
 
-                        if (trigger && !lastTrigger)
+                        bool shouldTrigger = (trigger && !lastTrigger) || _manualTriggerRequested;
+                        if (shouldTrigger)
                         {
-                            Console.WriteLine($"[轮询 {loopIndex}] trigger rising edge detected, creating mock scan event...");
+                            _manualTriggerRequested = false;
+                            Console.WriteLine($"[轮询 {loopIndex}] trigger detected, creating mock scan event...");
                             ScannerEvent scanEvent = mockScanner.CreateMockScanEvent();
                             string scanJson = $"{{\"type\":\"scan\",\"deviceId\":\"{scanEvent.DeviceId}\",\"code\":\"{scanEvent.Code}\",\"symbology\":\"{scanEvent.Symbology}\",\"scanTime\":\"{scanEvent.ScanTime}\",\"source\":\"{scanEvent.Source}\"}}";
                             Console.WriteLine(scanJson);
@@ -71,10 +77,41 @@ namespace DeviceService
                 exitCode = -1;
             }
 
-            Console.WriteLine();
-            Console.WriteLine("按任意键退出...");
-            Console.ReadKey();
+            Console.WriteLine("{\"type\":\"service-status\",\"status\":\"stopped\"}");
             return exitCode;
+        }
+
+        private static void StartCommandLoop()
+        {
+            var commandThread = new Thread(() =>
+            {
+                while (_running)
+                {
+                    string line = Console.ReadLine();
+                    if (string.IsNullOrWhiteSpace(line))
+                    {
+                        continue;
+                    }
+
+                    if (line.Contains("mock-trigger"))
+                    {
+                        _manualTriggerRequested = true;
+                        Console.WriteLine("{\"type\":\"service-log\",\"message\":\"mock-trigger received\"}");
+                    }
+                    else if (line.Contains("stop"))
+                    {
+                        _running = false;
+                        Console.WriteLine("{\"type\":\"service-log\",\"message\":\"stop command received\"}");
+                    }
+                    else
+                    {
+                        Console.WriteLine("{\"type\":\"service-log\",\"message\":\"unknown command\"}");
+                    }
+                }
+            });
+
+            commandThread.IsBackground = true;
+            commandThread.Start();
         }
     }
 }
