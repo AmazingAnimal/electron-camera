@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain } = require('electron')
 const { spawn } = require('node:child_process')
 const path = require('node:path')
+const iconv = require('iconv-lite')
 
 let mainWindow = null
 let deviceServiceProcess = null
@@ -73,9 +74,10 @@ function startDeviceService() {
     })
 
     let stdoutBuffer = ''
+    let stderrBuffer = ''
 
     deviceServiceProcess.stdout.on('data', (chunk) => {
-      stdoutBuffer += chunk.toString()
+      stdoutBuffer += iconv.decode(chunk, 'cp936')
       const lines = stdoutBuffer.split(/\r?\n/)
       stdoutBuffer = lines.pop() || ''
 
@@ -93,7 +95,15 @@ function startDeviceService() {
     })
 
     deviceServiceProcess.stderr.on('data', (chunk) => {
-      emitDeviceEvent({ type: 'stderr', message: chunk.toString().trim() })
+      stderrBuffer += iconv.decode(chunk, 'cp936')
+      const lines = stderrBuffer.split(/\r?\n/)
+      stderrBuffer = lines.pop() || ''
+
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (!trimmed) continue
+        emitDeviceEvent({ type: 'stderr', message: trimmed })
+      }
     })
 
     deviceServiceProcess.on('exit', (code) => {
