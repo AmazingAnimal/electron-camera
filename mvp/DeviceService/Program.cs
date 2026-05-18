@@ -55,6 +55,18 @@ namespace DeviceService
                             Console.WriteLine($"[poll {loopIndex}] reading allow pass coil...");
                             bool allowPass = plcService.ReadAllowPass(0);
 
+                            if (consecutiveFailures > 0)
+                            {
+                                Console.WriteLine($"[poll {loopIndex}] communication recovered after {consecutiveFailures} failures");
+                            }
+
+                            consecutiveFailures = 0;
+                            if (degradedReported)
+                            {
+                                Console.WriteLine("{\"type\":\"service-status\",\"status\":\"connected\",\"message\":\"modbus recovered\"}");
+                                degradedReported = false;
+                            }
+
                             string plcStatusJson = $"{{\"type\":\"plc-status\",\"scanTrigger\":{trigger.ToString().ToLower()},\"deviceStatus\":{deviceStatus},\"allowPass\":{allowPass.ToString().ToLower()},\"time\":\"{DateTime.Now:yyyy-MM-dd HH:mm:ss}\"}}";
                             Console.WriteLine(plcStatusJson);
 
@@ -79,7 +91,15 @@ namespace DeviceService
                         }
                         catch (Exception ex)
                         {
-                            Console.WriteLine(BuildErrorJson("plc communication failed: " + ex.Message));
+                            consecutiveFailures++;
+                            Console.WriteLine(BuildErrorJson("plc communication failed: " + ex.Message, consecutiveFailures));
+
+                            if (!degradedReported)
+                            {
+                                Console.WriteLine("{\"type\":\"service-status\",\"status\":\"degraded\",\"message\":\"modbus communication failed\"}");
+                                degradedReported = true;
+                            }
+
                             lastTrigger = false;
                             TryDisconnect(plcService);
                             Thread.Sleep(1000);
@@ -181,8 +201,14 @@ namespace DeviceService
 
         private static string BuildErrorJson(string message)
         {
+            return BuildErrorJson(message, null);
+        }
+
+        private static string BuildErrorJson(string message, int? failureCount)
+        {
             string safeMessage = message.Replace("\\", "\\\\").Replace("\"", "\\\"");
-            return $"{{\"type\":\"error\",\"message\":\"{safeMessage}\",\"time\":\"{DateTime.Now:yyyy-MM-dd HH:mm:ss}\"}}";
+            string failurePart = failureCount.HasValue ? $",\"failureCount\":{failureCount.Value}" : string.Empty;
+            return $"{{\"type\":\"error\",\"message\":\"{safeMessage}\"{failurePart},\"time\":\"{DateTime.Now:yyyy-MM-dd HH:mm:ss}\"}}";
         }
     }
 }
