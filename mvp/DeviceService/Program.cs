@@ -10,6 +10,7 @@ namespace DeviceService
     {
         private static volatile bool _running = true;
         private static volatile bool _manualTriggerRequested = false;
+        private static volatile bool _forceScanSuccess = true;
 
         static int Main(string[] args)
         {
@@ -58,10 +59,10 @@ namespace DeviceService
                             Console.WriteLine(scanJson);
 
                             Console.WriteLine($"[轮询 {loopIndex}] writing scan success coil...");
-                            plcService.WriteScanSuccess(true, 0);
+                            plcService.WriteScanSuccess(_forceScanSuccess, 0);
 
                             Console.WriteLine($"[轮询 {loopIndex}] writing scan status register...");
-                            plcService.WriteScanStatusCode(1, 10);
+                            plcService.WriteScanStatusCode(_forceScanSuccess ? (ushort)1 : (ushort)2, 10);
                         }
 
                         lastTrigger = trigger;
@@ -97,6 +98,16 @@ namespace DeviceService
                     {
                         _manualTriggerRequested = true;
                         Console.WriteLine("{\"type\":\"service-log\",\"message\":\"mock-trigger received\"}");
+                    }
+                    else if (line.Contains("mock-success"))
+                    {
+                        _forceScanSuccess = true;
+                        Console.WriteLine("{\"type\":\"service-log\",\"message\":\"mock success mode enabled\"}");
+                    }
+                    else if (line.Contains("mock-fail"))
+                    {
+                        _forceScanSuccess = false;
+                        Console.WriteLine("{\"type\":\"service-log\",\"message\":\"mock fail mode enabled\"}");
                     }
                     else if (line.Contains("stop"))
                     {

@@ -18,6 +18,9 @@
         <div class="action-row">
           <el-button type="primary" @click="handleRestartService">重启服务</el-button>
           <el-button type="success" @click="handleSendMockTrigger">发送 Mock 命令</el-button>
+          <el-button type="warning" @click="handleSetMockSuccess">切换为成功模式</el-button>
+          <el-button type="danger" plain @click="handleSetMockFail">切换为失败模式</el-button>
+          <el-button type="danger" @click="handleStopService">停止服务</el-button>
           <el-button @click="handleClearHistory">清空历史</el-button>
           <el-button @click="handleClearLogs">清空日志</el-button>
         </div>
@@ -179,9 +182,10 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 
+const STORAGE_KEY = 'electron-camera-dashboard-state'
 const electronVersion = window.electronAPI?.version ?? 'unavailable'
 const workstationName = '一号工位'
 const serviceRunning = ref(false)
@@ -211,6 +215,33 @@ const plcStatus = reactive({
 
 const scanHistory = ref([])
 const eventLogs = ref([])
+
+const saveDashboardState = () => {
+  const payload = {
+    latestScan: { ...latestScan },
+    uploadSummary: { ...uploadSummary },
+    plcStatus: { ...plcStatus },
+    scanHistory: scanHistory.value,
+    eventLogs: eventLogs.value,
+  }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+}
+
+const loadDashboardState = () => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return
+    const data = JSON.parse(raw)
+
+    Object.assign(latestScan, data.latestScan || {})
+    Object.assign(uploadSummary, data.uploadSummary || {})
+    Object.assign(plcStatus, data.plcStatus || {})
+    scanHistory.value = Array.isArray(data.scanHistory) ? data.scanHistory : []
+    eventLogs.value = Array.isArray(data.eventLogs) ? data.eventLogs : []
+  } catch {
+    localStorage.removeItem(STORAGE_KEY)
+  }
+}
 
 const addLog = (type, message) => {
   eventLogs.value.unshift({
@@ -259,6 +290,33 @@ const handleSendMockTrigger = async () => {
   }
 }
 
+const handleSetMockSuccess = async () => {
+  const result = await window.electronAPI.sendDeviceServiceCommand({ type: 'mock-success' })
+  if (result?.ok) {
+    ElMessage.success('已切换为 mock 成功模式')
+  } else {
+    ElMessage.error('发送命令失败')
+  }
+}
+
+const handleSetMockFail = async () => {
+  const result = await window.electronAPI.sendDeviceServiceCommand({ type: 'mock-fail' })
+  if (result?.ok) {
+    ElMessage.success('已切换为 mock 失败模式')
+  } else {
+    ElMessage.error('发送命令失败')
+  }
+}
+
+const handleStopService = async () => {
+  const result = await window.electronAPI.sendDeviceServiceCommand({ type: 'stop' })
+  if (result?.ok) {
+    ElMessage.success('已发送停止服务命令')
+  } else {
+    ElMessage.error('发送命令失败')
+  }
+}
+
 const handleClearHistory = () => {
   scanHistory.value = []
   uploadSummary.pending = 0
@@ -276,6 +334,8 @@ const handleClearLogs = () => {
 let removeDeviceListener = null
 
 onMounted(async () => {
+  loadDashboardState()
+
   try {
     const ping = await window.electronAPI.pingDeviceService()
     serviceRunning.value = !!ping?.running
@@ -288,7 +348,7 @@ onMounted(async () => {
     if (!payload || !payload.type) return
 
     if (payload.type === 'service-status') {
-      serviceRunning.value = true
+      serviceRunning.value = payload.status !== 'stopped'
       addLog(payload.type, payload.status)
       return
     }
@@ -299,7 +359,7 @@ onMounted(async () => {
       return
     }
 
-    if (payload.type === 'stderr' || payload.type === 'log') {
+    if (payload.type === 'stderr' || payload.type === 'log' || payload.type === 'service-log') {
       addLog(payload.type, payload.message)
       return
     }
@@ -342,6 +402,20 @@ onMounted(async () => {
     }
   })
 })
+
+watch(
+  () => ({
+    latestScan: { ...latestScan },
+    uploadSummary: { ...uploadSummary },
+    plcStatus: { ...plcStatus },
+    scanHistory: scanHistory.value,
+    eventLogs: eventLogs.value,
+  }),
+  () => {
+    saveDashboardState()
+  },
+  { deep: true },
+)
 
 onBeforeUnmount(() => {
   if (typeof removeDeviceListener === 'function') {
