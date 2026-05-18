@@ -1,0 +1,9 @@
+D:\code\electron-camera\mvp\DeviceService\bin\Debug\DeviceService.exe
+D:\code\electron-camera\mvp\DeviceService\bin\Debug\DeviceService.pdb
+D:\code\electron-camera\mvp\DeviceService\bin\Debug\ModbusRtuDemo.exe
+D:\code\electron-camera\mvp\DeviceService\bin\Debug\ModbusRtuDemo.pdb
+D:\code\electron-camera\mvp\DeviceService\obj\Debug\DeviceService.csproj.AssemblyReference.cache
+D:\code\electron-camera\mvp\DeviceService\obj\Debug\DeviceService.csproj.CoreCompileInputs.cache
+D:\code\electron-camera\mvp\DeviceService\obj\Debug\DeviceSe.846D2A0B.Up2Date
+D:\code\electron-camera\mvp\DeviceService\obj\Debug\DeviceService.exe
+D:\code\electron-camera\mvp\DeviceService\obj\Debug\DeviceService.pdb

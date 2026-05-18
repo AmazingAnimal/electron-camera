@@ -32,6 +32,8 @@ namespace DeviceService
 
                     bool lastTrigger = false;
                     int loopIndex = 0;
+                    int consecutiveFailures = 0;
+                    bool degradedReported = false;
 
                     while (_running)
                     {

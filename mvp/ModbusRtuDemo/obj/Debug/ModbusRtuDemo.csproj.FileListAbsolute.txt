@@ -1,0 +1,6 @@
+D:\code\electron-camera\mvp\ModbusRtuDemo\bin\Debug\ModbusRtuDemo.exe
+D:\code\electron-camera\mvp\ModbusRtuDemo\bin\Debug\ModbusRtuDemo.pdb
+D:\code\electron-camera\mvp\ModbusRtuDemo\obj\Debug\ModbusRtuDemo.csproj.AssemblyReference.cache
+D:\code\electron-camera\mvp\ModbusRtuDemo\obj\Debug\ModbusRtuDemo.csproj.CoreCompileInputs.cache
+D:\code\electron-camera\mvp\ModbusRtuDemo\obj\Debug\ModbusRtuDemo.exe
+D:\code\electron-camera\mvp\ModbusRtuDemo\obj\Debug\ModbusRtuDemo.pdb
