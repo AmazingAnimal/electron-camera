@@ -38,6 +38,7 @@ namespace ModbusRtuDemo
         public bool[] ReadCoils(byte slaveId, ushort startAddress, ushort coilCount)
         {
             byte[] request = BuildReadCoilsRequest(slaveId, startAddress, coilCount);
+            PrepareRequest();
             _serialPort.Write(request, 0, request.Length);
 
             int expectedLength = 5 + (coilCount + 7) / 8;
@@ -64,6 +65,7 @@ namespace ModbusRtuDemo
         public ushort[] ReadHoldingRegisters(byte slaveId, ushort startAddress, ushort registerCount)
         {
             byte[] request = BuildReadHoldingRegistersRequest(slaveId, startAddress, registerCount);
+            PrepareRequest();
             _serialPort.Write(request, 0, request.Length);
 
             int expectedLength = 5 + registerCount * 2;
@@ -90,6 +92,7 @@ namespace ModbusRtuDemo
         public void WriteSingleCoil(byte slaveId, ushort coilAddress, bool value)
         {
             byte[] request = BuildWriteSingleCoilRequest(slaveId, coilAddress, value);
+            PrepareRequest();
             _serialPort.Write(request, 0, request.Length);
 
             byte[] response = ReadExact(8);
@@ -100,6 +103,7 @@ namespace ModbusRtuDemo
         public void WriteSingleRegister(byte slaveId, ushort registerAddress, ushort value)
         {
             byte[] request = BuildWriteSingleRegisterRequest(slaveId, registerAddress, value);
+            PrepareRequest();
             _serialPort.Write(request, 0, request.Length);
 
             byte[] response = ReadExact(8);
@@ -165,6 +169,17 @@ namespace ModbusRtuDemo
         public static string ToHex(byte[] data)
         {
             return string.Join(" ", data.Select(b => b.ToString("X2")));
+        }
+
+        private void PrepareRequest()
+        {
+            if (!IsOpen)
+            {
+                Open();
+            }
+
+            _serialPort.DiscardInBuffer();
+            _serialPort.DiscardOutBuffer();
         }
 
         private byte[] ReadExact(int expectedLength)

@@ -27,8 +27,7 @@ namespace DeviceService
             {
                 using (var plcService = new PlcService(portName, baudRate, slaveId))
                 {
-                    Console.WriteLine($"[启动] port={portName}, baudRate={baudRate}, slaveId={slaveId}, pollIntervalMs={pollIntervalMs}");
-                    plcService.Connect();
+                    Console.WriteLine($"[start] port={portName}, baudRate={baudRate}, slaveId={slaveId}, pollIntervalMs={pollIntervalMs}");
                     Console.WriteLine("{\"type\":\"service-status\",\"status\":\"started\"}");
 
                     bool lastTrigger = false;
@@ -36,45 +35,59 @@ namespace DeviceService
 
                     while (_running)
                     {
-                        loopIndex++;
-                        Console.WriteLine($"[轮询 {loopIndex}] reading trigger...");
-                        bool trigger = plcService.ReadScanTrigger(0);
-
-                        Console.WriteLine($"[轮询 {loopIndex}] reading device status...");
-                        ushort deviceStatus = plcService.ReadDeviceStatus(1);
-
-                        Console.WriteLine($"[轮询 {loopIndex}] reading allow pass coil...");
-                        bool allowPass = plcService.ReadAllowPass(0);
-
-                        string plcStatusJson = $"{{\"type\":\"plc-status\",\"scanTrigger\":{trigger.ToString().ToLower()},\"deviceStatus\":{deviceStatus},\"allowPass\":{allowPass.ToString().ToLower()},\"time\":\"{DateTime.Now:yyyy-MM-dd HH:mm:ss}\"}}";
-                        Console.WriteLine(plcStatusJson);
-
-                        bool shouldTrigger = (trigger && !lastTrigger) || _manualTriggerRequested;
-                        if (shouldTrigger)
+                        if (!EnsureConnected(plcService))
                         {
-                            _manualTriggerRequested = false;
-                            Console.WriteLine($"[轮询 {loopIndex}] trigger detected, creating mock scan event...");
-                            ScannerEvent scanEvent = mockScanner.CreateMockScanEvent();
-                            string scanJson = $"{{\"type\":\"scan\",\"deviceId\":\"{scanEvent.DeviceId}\",\"code\":\"{scanEvent.Code}\",\"symbology\":\"{scanEvent.Symbology}\",\"scanTime\":\"{scanEvent.ScanTime}\",\"source\":\"{scanEvent.Source}\"}}";
-                            Console.WriteLine(scanJson);
-
-                            Console.WriteLine($"[轮询 {loopIndex}] writing scan success coil...");
-                            plcService.WriteScanSuccess(_forceScanSuccess, 0);
-
-                            Console.WriteLine($"[轮询 {loopIndex}] writing scan status register...");
-                            plcService.WriteScanStatusCode(_forceScanSuccess ? (ushort)1 : (ushort)2, 10);
+                            Thread.Sleep(1000);
+                            continue;
                         }
 
-                        lastTrigger = trigger;
-                        Thread.Sleep(pollIntervalMs);
+                        try
+                        {
+                            loopIndex++;
+                            Console.WriteLine($"[poll {loopIndex}] reading trigger...");
+                            bool trigger = plcService.ReadScanTrigger(0);
+
+                            Console.WriteLine($"[poll {loopIndex}] reading device status...");
+                            ushort deviceStatus = plcService.ReadDeviceStatus(1);
+
+                            Console.WriteLine($"[poll {loopIndex}] reading allow pass coil...");
+                            bool allowPass = plcService.ReadAllowPass(0);
+
+                            string plcStatusJson = $"{{\"type\":\"plc-status\",\"scanTrigger\":{trigger.ToString().ToLower()},\"deviceStatus\":{deviceStatus},\"allowPass\":{allowPass.ToString().ToLower()},\"time\":\"{DateTime.Now:yyyy-MM-dd HH:mm:ss}\"}}";
+                            Console.WriteLine(plcStatusJson);
+
+                            bool shouldTrigger = (trigger && !lastTrigger) || _manualTriggerRequested;
+                            if (shouldTrigger)
+                            {
+                                _manualTriggerRequested = false;
+                                Console.WriteLine($"[poll {loopIndex}] trigger detected, creating mock scan event...");
+                                ScannerEvent scanEvent = mockScanner.CreateMockScanEvent();
+                                string scanJson = $"{{\"type\":\"scan\",\"deviceId\":\"{scanEvent.DeviceId}\",\"code\":\"{scanEvent.Code}\",\"symbology\":\"{scanEvent.Symbology}\",\"scanTime\":\"{scanEvent.ScanTime}\",\"source\":\"{scanEvent.Source}\"}}";
+                                Console.WriteLine(scanJson);
+
+                                Console.WriteLine($"[poll {loopIndex}] writing scan success coil...");
+                                plcService.WriteScanSuccess(_forceScanSuccess, 0);
+
+                                Console.WriteLine($"[poll {loopIndex}] writing scan status register...");
+                                plcService.WriteScanStatusCode(_forceScanSuccess ? (ushort)1 : (ushort)2, 10);
+                            }
+
+                            lastTrigger = trigger;
+                            Thread.Sleep(pollIntervalMs);
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine(BuildErrorJson("plc communication failed: " + ex.Message));
+                            lastTrigger = false;
+                            TryDisconnect(plcService);
+                            Thread.Sleep(1000);
+                        }
                     }
                 }
             }
             catch (Exception ex)
             {
-                string safeMessage = ex.Message.Replace("\\", "\\\\").Replace("\"", "\\\"");
-                string errorJson = $"{{\"type\":\"error\",\"message\":\"{safeMessage}\",\"time\":\"{DateTime.Now:yyyy-MM-dd HH:mm:ss}\"}}";
-                Console.WriteLine(errorJson);
+                Console.WriteLine(BuildErrorJson(ex.Message));
                 exitCode = -1;
             }
 
@@ -89,6 +102,12 @@ namespace DeviceService
                 while (_running)
                 {
                     string line = Console.ReadLine();
+                    if (line == null)
+                    {
+                        Thread.Sleep(1000);
+                        continue;
+                    }
+
                     if (string.IsNullOrWhiteSpace(line))
                     {
                         continue;
@@ -123,6 +142,45 @@ namespace DeviceService
 
             commandThread.IsBackground = true;
             commandThread.Start();
+        }
+
+        private static bool EnsureConnected(PlcService plcService)
+        {
+            if (plcService.IsConnected)
+            {
+                return true;
+            }
+
+            try
+            {
+                plcService.Connect();
+                Console.WriteLine("{\"type\":\"service-status\",\"status\":\"connected\"}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(BuildErrorJson("plc connect failed: " + ex.Message));
+                return false;
+            }
+        }
+
+        private static void TryDisconnect(PlcService plcService)
+        {
+            try
+            {
+                plcService.Disconnect();
+                Console.WriteLine("{\"type\":\"service-status\",\"status\":\"disconnected\",\"reason\":\"communication-error\"}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(BuildErrorJson("plc disconnect failed: " + ex.Message));
+            }
+        }
+
+        private static string BuildErrorJson(string message)
+        {
+            string safeMessage = message.Replace("\\", "\\\\").Replace("\"", "\\\"");
+            return $"{{\"type\":\"error\",\"message\":\"{safeMessage}\",\"time\":\"{DateTime.Now:yyyy-MM-dd HH:mm:ss}\"}}";
         }
     }
 }
