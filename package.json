@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "element-plus": "latest",
+    "iconv-lite": "^0.7.2",
     "vue": "latest"
   }
 }

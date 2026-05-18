@@ -33,39 +33,71 @@ namespace DeviceService
 
                     bool lastTrigger = false;
                     int loopIndex = 0;
+                    int consecutiveFailures = 0;
+                    bool degradedReported = false;
 
                     while (_running)
                     {
                         loopIndex++;
-                        Console.WriteLine($"[轮询 {loopIndex}] reading trigger...");
-                        bool trigger = plcService.ReadScanTrigger(0);
 
-                        Console.WriteLine($"[轮询 {loopIndex}] reading device status...");
-                        ushort deviceStatus = plcService.ReadDeviceStatus(1);
-
-                        Console.WriteLine($"[轮询 {loopIndex}] reading allow pass coil...");
-                        bool allowPass = plcService.ReadAllowPass(0);
-
-                        string plcStatusJson = $"{{\"type\":\"plc-status\",\"scanTrigger\":{trigger.ToString().ToLower()},\"deviceStatus\":{deviceStatus},\"allowPass\":{allowPass.ToString().ToLower()},\"time\":\"{DateTime.Now:yyyy-MM-dd HH:mm:ss}\"}}";
-                        Console.WriteLine(plcStatusJson);
-
-                        bool shouldTrigger = (trigger && !lastTrigger) || _manualTriggerRequested;
-                        if (shouldTrigger)
+                        try
                         {
-                            _manualTriggerRequested = false;
-                            Console.WriteLine($"[轮询 {loopIndex}] trigger detected, creating mock scan event...");
-                            ScannerEvent scanEvent = mockScanner.CreateMockScanEvent();
-                            string scanJson = $"{{\"type\":\"scan\",\"deviceId\":\"{scanEvent.DeviceId}\",\"code\":\"{scanEvent.Code}\",\"symbology\":\"{scanEvent.Symbology}\",\"scanTime\":\"{scanEvent.ScanTime}\",\"source\":\"{scanEvent.Source}\"}}";
-                            Console.WriteLine(scanJson);
+                            Console.WriteLine($"[轮询 {loopIndex}] reading trigger...");
+                            bool trigger = plcService.ReadScanTrigger(0);
 
-                            Console.WriteLine($"[轮询 {loopIndex}] writing scan success coil...");
-                            plcService.WriteScanSuccess(_forceScanSuccess, 0);
+                            Console.WriteLine($"[轮询 {loopIndex}] reading device status...");
+                            ushort deviceStatus = plcService.ReadDeviceStatus(1);
 
-                            Console.WriteLine($"[轮询 {loopIndex}] writing scan status register...");
-                            plcService.WriteScanStatusCode(_forceScanSuccess ? (ushort)1 : (ushort)2, 10);
+                            Console.WriteLine($"[轮询 {loopIndex}] reading allow pass coil...");
+                            bool allowPass = plcService.ReadAllowPass(0);
+
+                            if (consecutiveFailures > 0)
+                            {
+                                Console.WriteLine($"[轮询 {loopIndex}] communication recovered after {consecutiveFailures} failures");
+                            }
+
+                            consecutiveFailures = 0;
+                            if (degradedReported)
+                            {
+                                Console.WriteLine("{\"type\":\"service-status\",\"status\":\"connected\",\"message\":\"modbus recovered\"}");
+                                degradedReported = false;
+                            }
+
+                            string plcStatusJson = $"{{\"type\":\"plc-status\",\"scanTrigger\":{trigger.ToString().ToLower()},\"deviceStatus\":{deviceStatus},\"allowPass\":{allowPass.ToString().ToLower()},\"time\":\"{DateTime.Now:yyyy-MM-dd HH:mm:ss}\"}}";
+                            Console.WriteLine(plcStatusJson);
+
+                            bool shouldTrigger = (trigger && !lastTrigger) || _manualTriggerRequested;
+                            if (shouldTrigger)
+                            {
+                                _manualTriggerRequested = false;
+                                Console.WriteLine($"[轮询 {loopIndex}] trigger detected, creating mock scan event...");
+                                ScannerEvent scanEvent = mockScanner.CreateMockScanEvent();
+                                string scanJson = $"{{\"type\":\"scan\",\"deviceId\":\"{scanEvent.DeviceId}\",\"code\":\"{scanEvent.Code}\",\"symbology\":\"{scanEvent.Symbology}\",\"scanTime\":\"{scanEvent.ScanTime}\",\"source\":\"{scanEvent.Source}\"}}";
+                                Console.WriteLine(scanJson);
+
+                                Console.WriteLine($"[轮询 {loopIndex}] writing scan success coil...");
+                                plcService.WriteScanSuccess(_forceScanSuccess, 0);
+
+                                Console.WriteLine($"[轮询 {loopIndex}] writing scan status register...");
+                                plcService.WriteScanStatusCode(_forceScanSuccess ? (ushort)1 : (ushort)2, 10);
+                            }
+
+                            lastTrigger = trigger;
+                        }
+                        catch (Exception ex)
+                        {
+                            consecutiveFailures++;
+                            string safeMessage = ex.Message.Replace("\\", "\\\\").Replace("\"", "\\\"");
+                            string errorJson = $"{{\"type\":\"error\",\"message\":\"{safeMessage}\",\"failureCount\":{consecutiveFailures},\"time\":\"{DateTime.Now:yyyy-MM-dd HH:mm:ss}\"}}";
+                            Console.WriteLine(errorJson);
+
+                            if (!degradedReported)
+                            {
+                                Console.WriteLine("{\"type\":\"service-status\",\"status\":\"degraded\",\"message\":\"modbus communication failed\"}");
+                                degradedReported = true;
+                            }
                         }
 
-                        lastTrigger = trigger;
                         Thread.Sleep(pollIntervalMs);
                     }
                 }
